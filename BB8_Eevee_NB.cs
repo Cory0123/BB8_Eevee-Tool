@@ -2577,12 +2577,20 @@ namespace BB8_Eevee_NB
             string[,] cost_type = { { "NB", "C" }, { "NB", "F" }, { "NH", "C" } };
 
             DataTable dtiCost = new DataTable();
-            string striCost = "SELECT * FROM [dbo].[Eevee_Upload_Report] WHERE [version]='" + ver + "' and [Cost] is not null and [Vendorcode] is not null and [Type]<>'Adder' order by [filepath], [PN], [Type] desc";
+            string striCost = "SELECT DISTINCT A.*, B.[Owner] " +
+                            "FROM [dbo].[Eevee_Upload_Report] AS A " +
+                            "LEFT JOIN (SELECT DISTINCT [filepath], [version], [Owner] FROM [dbo].[Eevee_File_History]) AS B " +
+                            "ON A.[filepath] = B.[filepath] AND A.[version] = B.[version] " +
+                            "WHERE A.[version] = '" + ver + "' " +
+                            "AND A.[Cost] IS NOT NULL AND A.[Vendorcode] IS NOT NULL AND A.[Type] <> 'Adder' " +
+                            "ORDER BY A.[filepath], A.[PN], A.[Type] DESC";
+
             SqlDataAdapter sdaiCost = new SqlDataAdapter(striCost, conn);
             sdaiCost.SelectCommand.CommandTimeout = 0;
             sdaiCost.Fill(dtiCost);
 
             DataView dviCost = new DataView(dtiCost);
+
             for (int i = 0; i < CPCT.Rows.Count; i++)
             {
                 if (CPCT.Rows[i]["ErrorMsg"].ToString() == "")
@@ -2590,54 +2598,59 @@ namespace BB8_Eevee_NB
                     string trackingname = CPCT.Rows[i]["trackingname"].ToString().Trim();
                     string filepath = CPCT.Rows[i]["filepath"].ToString().Trim();
 
-                    dviCost.RowFilter = string.Empty;
-                    dviCost.RowFilter = "filepath LIKE '" + filepath + "%'";
+                    dviCost.RowFilter = $"filepath LIKE '{filepath}%'";
 
-                    FileInfo fi = new FileInfo(outcome[0] + @"\" + trackingname + " -EffDate " + ver + " Id" + (100 + i) + " (New).xlsx");
+                    DataTable filteredTable = dviCost.ToTable();
+
+                    FileInfo fi = new FileInfo($"{outcome[0]}\\{trackingname} -EffDate {ver} Id{100 + i} (New).xlsx");
                     using (ExcelPackage ep = new ExcelPackage(fi))
                     {
                         ExcelWorksheet xlSheet = ep.Workbook.Worksheets.Add("Sheet1");
-                        xlSheet.Cells[1, 1].Value = "Site";
-                        xlSheet.Cells[1, 2].Value = "PartNo.";
-                        xlSheet.Cells[1, 3].Value = "Vendor";
-                        xlSheet.Cells[1, 4].Value = "TransactionType";
-                        xlSheet.Cells[1, 5].Value = "CostType";
-                        xlSheet.Cells[1, 6].Value = "Cost";
-                        xlSheet.Cells[1, 7].Value = "EffFromDate";
-                        xlSheet.Cells[1, 8].Value = "Currentcy";
-                        xlSheet.Cells[1, 9].Value = "Exch. Rate";
-                        xlSheet.Cells[1, 10].Value = "Contract No.";
-                        xlSheet.Cells[1, 11].Value = "Target Quantity";
-                        xlSheet.Cells[1, 12].Value = "Target Value";
+
+                        // Set header
+                        string[] headers = {
+                            "Site", "PartNo.", "Vendor", "TransactionType", "CostType", "Cost",
+                            "EffFromDate", "Currentcy", "Exch. Rate", "Contract No.",
+                            "Target Quantity", "Target Value", "Onwer"
+                        };
+                        for (int h = 0; h < headers.Length; h++)
+                            xlSheet.Cells[1, h + 1].Value = headers[h];
 
                         xlSheet.Columns[1].Style.Numberformat.Format = "@";
                         xlSheet.Columns[3].Style.Numberformat.Format = "@";
 
                         int srow = 2;
-                        for (int X = 0; X < dviCost.ToTable().Rows.Count; X++)
+
+                        foreach (DataRow row in filteredTable.Rows)
                         {
-                            for (int Y = 0; Y < cost_type.GetLength(0); Y++)
+                            string owner = row["Owner"]?.ToString().Trim() ?? "UNKNOWN";
+
+                            for (int y = 0; y < cost_type.GetLength(0); y++)
                             {
-                                xlSheet.Cells[srow, 1].Value = dviCost.ToTable().Rows[X]["Sitecode"].ToString().Trim();
-                                xlSheet.Cells[srow, 2].Value = dviCost.ToTable().Rows[X]["PN"].ToString().Trim();
-                                xlSheet.Cells[srow, 3].Value = dviCost.ToTable().Rows[X]["Vendorcode"].ToString().Trim();
-                                xlSheet.Cells[srow, 4].Value = cost_type[Y, 0];
-                                xlSheet.Cells[srow, 5].Value = cost_type[Y, 1];
-                                if (Convert.ToDouble(dviCost.ToTable().Rows[X]["Cost"]) == 0) //Cost $0 is not acceptable.
-                                {
-                                    xlSheet.Cells[srow, 6].Value = 0.01;
-                                }
-                                else
-                                {
-                                    xlSheet.Cells[srow, 6].Value = Convert.ToDouble(dviCost.ToTable().Rows[X]["Cost"].ToString());
-                                }
+                                xlSheet.Cells[srow, 1].Value = row["Sitecode"].ToString().Trim();
+                                xlSheet.Cells[srow, 2].Value = row["PN"].ToString().Trim();
+                                xlSheet.Cells[srow, 3].Value = row["Vendorcode"].ToString().Trim();
+                                xlSheet.Cells[srow, 4].Value = cost_type[y, 0];
+                                xlSheet.Cells[srow, 5].Value = cost_type[y, 1];
+
+                                double cost = 0.01;
+                                if (row["Cost"] != DBNull.Value && double.TryParse(row["Cost"].ToString(), out double parsedCost))
+                                    cost = parsedCost == 0 ? 0.01 : parsedCost;
+
+                                xlSheet.Cells[srow, 6].Value = cost;
                                 xlSheet.Cells[srow, 7].Value = DateTime.UtcNow.ToString("MM/dd/yyyy");
                                 xlSheet.Cells[srow, 8].Value = "USD";
+                                xlSheet.Cells[srow, 9].Value = ""; // Exch. Rate
+                                xlSheet.Cells[srow, 10].Value = ""; // Contract No.
+                                xlSheet.Cells[srow, 11].Value = ""; // Target Qty
+                                xlSheet.Cells[srow, 12].Value = ""; // Target Value
+                                xlSheet.Cells[srow, 13].Value = owner;
+
                                 srow++;
                             }
                         }
+
                         ep.Save();
-                        ep.Dispose();
                     }
                 }
             }
