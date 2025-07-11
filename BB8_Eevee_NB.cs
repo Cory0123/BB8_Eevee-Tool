@@ -2611,7 +2611,7 @@ namespace BB8_Eevee_NB
                         string[] headers = {
                             "Site", "PartNo.", "Vendor", "TransactionType", "CostType", "Cost",
                             "EffFromDate", "Currentcy", "Exch. Rate", "Contract No.",
-                            "Target Quantity", "Target Value", "Onwer"
+                            "Target Quantity", "Target Value", "Request By"
                         };
                         for (int h = 0; h < headers.Length; h++)
                             xlSheet.Cells[1, h + 1].Value = headers[h];
@@ -2644,7 +2644,7 @@ namespace BB8_Eevee_NB
                                 xlSheet.Cells[srow, 10].Value = ""; // Contract No.
                                 xlSheet.Cells[srow, 11].Value = ""; // Target Qty
                                 xlSheet.Cells[srow, 12].Value = ""; // Target Value
-                                xlSheet.Cells[srow, 13].Value = owner;
+                                xlSheet.Cells[srow, 13].Value = owner;//Request By
 
                                 srow++;
                             }
